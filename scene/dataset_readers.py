@@ -13,7 +13,6 @@ import os
 import sys
 from PIL import Image
 from scene.cameras import Camera
-
 from typing import NamedTuple
 from scene.colmap_loader import read_extrinsics_text, read_intrinsics_text, qvec2rotmat, \
     read_extrinsics_binary, read_intrinsics_binary, read_points3D_binary, read_points3D_text
@@ -30,6 +29,7 @@ from utils.sh_utils import SH2RGB
 from scene.gaussian_model import BasicPointCloud
 from utils.general_utils import PILtoTorch
 from tqdm import tqdm
+
 class CameraInfo(NamedTuple):
     uid: int
     R: np.array
@@ -197,6 +197,7 @@ def readColmapSceneInfo(path, images, eval, llffhold=8):
                            nerf_normalization=nerf_normalization,
                            ply_path=ply_path)
     return scene_info
+
 def generateCamerasFromTransforms(path, template_transformsfile, extension, maxtime):
     trans_t = lambda t : torch.Tensor([
     [1,0,0,0],
@@ -256,6 +257,7 @@ def generateCamerasFromTransforms(path, template_transformsfile, extension, maxt
                             image_path=None, image_name=None, width=image.shape[1], height=image.shape[2],
                             time = time, mask=None))
     return cam_infos
+
 def readCamerasFromTransforms(path, transformsfile, white_background, extension=".png", mapper = {}):
     cam_infos = []
 
@@ -295,6 +297,7 @@ def readCamerasFromTransforms(path, transformsfile, white_background, extension=
                             time = time, mask=None))
             
     return cam_infos
+
 def read_timeline(path):
     with open(os.path.join(path, "transforms_train.json")) as json_file:
         train_json = json.load(json_file)
@@ -311,6 +314,7 @@ def read_timeline(path):
         timestamp_mapper[time] = time/max_time_float
 
     return timestamp_mapper, max_time_float
+
 def readNerfSyntheticInfo(path, white_background, eval, extension=".png"):
     timestamp_mapper, max_time = read_timeline(path)
     print("Reading Training Transforms")
@@ -351,6 +355,7 @@ def readNerfSyntheticInfo(path, white_background, eval, extension=".png"):
                            maxtime=max_time
                            )
     return scene_info
+
 def format_infos(dataset,split):
     # loading
     cameras = []
@@ -399,7 +404,8 @@ def readHyperDataInfos(datadir,use_bg_points,eval):
                            )
 
     return scene_info
-def format_render_poses(poses,data_infos):
+
+def format_render_poses(poses, data_infos):
     cameras = []
     tensor_to_pil = transforms.ToPILImage()
     len_poses = len(poses)
@@ -439,6 +445,7 @@ def add_points(pointsclouds, xyz_min, xyz_max):
     return pointsclouds
     # breakpoint()
     # new_
+
 def readdynerfInfo(datadir,use_bg_points,eval):
     # loading all the data follow hexplane format
     # ply_path = os.path.join(datadir, "points3D_dense.ply")
@@ -463,7 +470,7 @@ def readdynerfInfo(datadir,use_bg_points,eval):
     eval_index=0,
         )
     train_cam_infos = format_infos(train_dataset,"train")
-    val_cam_infos = format_render_poses(test_dataset.val_poses,test_dataset)
+    val_cam_infos = format_render_poses(test_dataset.val_poses, test_dataset)
     nerf_normalization = getNerfppNorm(train_cam_infos)
 
     # xyz = np.load
@@ -508,6 +515,7 @@ def setup_camera(w, h, k, w2c, near=0.01, far=100):
         debug=True
     )
     return cam
+
 def plot_camera_orientations(cam_list, xyz):
     import matplotlib.pyplot as plt
     fig = plt.figure()
@@ -534,6 +542,7 @@ def plot_camera_orientations(cam_list, xyz):
     ax.set_zlabel('Z Axis')
     plt.savefig("output.png")
     # breakpoint()
+
 def readPanopticmeta(datadir, json_path):
     with open(os.path.join(datadir,json_path)) as f:
         test_meta = json.load(f)
@@ -570,6 +579,7 @@ def readPanopticmeta(datadir, json_path):
     scene_radius = 1.1 * np.max(np.linalg.norm(cam_centers - np.mean(cam_centers, 0)[None], axis=-1))
     # breakpoint()
     return cam_infos, max_time, scene_radius 
+
 def readPanopticSportsinfos(datadir):
     train_cam_infos, max_time, scene_radius = readPanopticmeta(datadir, "train_meta.json")
     test_cam_infos,_, _ = readPanopticmeta(datadir, "test_meta.json")
@@ -599,11 +609,11 @@ def readPanopticSportsinfos(datadir):
                            maxtime=max_time,
                            )
     return scene_info
+
 sceneLoadTypeCallbacks = {
     "Colmap": readColmapSceneInfo,
     "Blender" : readNerfSyntheticInfo,
     "dynerf" : readdynerfInfo,
     "nerfies": readHyperDataInfos,  # NeRFies & HyperNeRF dataset proposed by [https://github.com/google/hypernerf/releases/tag/v0.1]
     "PanopticSports" : readPanopticSportsinfos
-
 }

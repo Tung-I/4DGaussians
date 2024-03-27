@@ -18,7 +18,7 @@ from gaussian_renderer import render, network_gui
 import sys
 from scene import Scene, GaussianModel
 from utils.general_utils import safe_state
-import uuid
+# import uuid
 from tqdm import tqdm
 from utils.image_utils import psnr
 from argparse import ArgumentParser, Namespace
@@ -26,10 +26,11 @@ from arguments import ModelParams, PipelineParams, OptimizationParams, ModelHidd
 from torch.utils.data import DataLoader
 from utils.timer import Timer
 from utils.loader_utils import FineSampler, get_stamp_list
-import lpips
+# import lpips
 from utils.scene_utils import render_training_image
 from time import time
 import copy
+import mmengine
 
 to8b = lambda x : (255*np.clip(x.cpu().numpy(),0,1)).astype(np.uint8)
 
@@ -38,48 +39,39 @@ try:
     TENSORBOARD_FOUND = True
 except ImportError:
     TENSORBOARD_FOUND = False
+
+
 def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_iterations, 
                          checkpoint_iterations, checkpoint, debug_from,
                          gaussians, scene, stage, tb_writer, train_iter,timer):
     first_iter = 0
-
     gaussians.training_setup(opt)
     if checkpoint:
-        # breakpoint()
         if stage == "coarse" and stage not in checkpoint:
             print("start from fine stage, skip coarse stage.")
-            # process is in the coarse stage, but start from fine stage
             return
         if stage in checkpoint: 
             (model_params, first_iter) = torch.load(checkpoint)
             gaussians.restore(model_params, opt)
-
-
     bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
     background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
-
     iter_start = torch.cuda.Event(enable_timing = True)
     iter_end = torch.cuda.Event(enable_timing = True)
-
     viewpoint_stack = None
     ema_loss_for_log = 0.0
     ema_psnr_for_log = 0.0
-
     final_iter = train_iter
-    
     progress_bar = tqdm(range(first_iter, final_iter), desc="Training progress")
     first_iter += 1
-    # lpips_model = lpips.LPIPS(net="alex").cuda()
+
     video_cams = scene.getVideoCameras()
     test_cams = scene.getTestCameras()
     train_cams = scene.getTrainCameras()
-
 
     if not viewpoint_stack and not opt.dataloader:
         # dnerf's branch
         viewpoint_stack = [i for i in train_cams]
         temp_list = copy.deepcopy(viewpoint_stack)
-    # 
     batch_size = opt.batch_size
     print("data loading done")
     if opt.dataloader:
@@ -103,7 +95,7 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
         viewpoint_stack = temp_list.copy()
     else:
         load_in_memory = False 
-                            # 
+                           
     count = 0
     for iteration in range(first_iter, final_iter+1):        
         if network_gui.conn == None:
@@ -414,9 +406,9 @@ if __name__ == "__main__":
     args = parser.parse_args(sys.argv[1:])
     args.save_iterations.append(args.iterations)
     if args.configs:
-        import mmcv
         from utils.params_utils import merge_hparams
-        config = mmcv.Config.fromfile(args.configs)
+        # config = mmcv.Config.fromfile(args.configs)
+        config = mmengine.Config.fromfile(args.configs)
         args = merge_hparams(args, config)
     print("Optimizing " + args.model_path)
 
@@ -426,7 +418,8 @@ if __name__ == "__main__":
     # Start GUI server, configure and run training
     network_gui.init(args.ip, args.port)
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
-    training(lp.extract(args), hp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from, args.expname)
+    training(lp.extract(args), hp.extract(args), op.extract(args), pp.extract(args), 
+            args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from, args.expname)
 
     # All done
     print("\nTraining complete.")

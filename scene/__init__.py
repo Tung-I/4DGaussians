@@ -20,6 +20,10 @@ from arguments import ModelParams
 from utils.camera_utils import cameraList_from_camInfos, camera_to_JSON
 from torch.utils.data import Dataset
 from scene.dataset_readers import add_points
+
+# SceneInfo: point_cloud: BasicPointCloud, train_cameras: list, test_cameras: list, video_cameras: list, 
+            # nerf_normalization: dict, ply_path: str, maxtime: int
+
 class Scene:
 
     gaussians : GaussianModel

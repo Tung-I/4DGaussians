@@ -4,12 +4,12 @@ import cv2
 import random
 import numpy as np
 from PIL import Image
- 
 import torch
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.data.sampler import Sampler
 from torchvision import transforms, utils
 import random
+
 def get_stamp_list(dataset, timestamp):
     frame_length = int(len(dataset)/len(dataset.dataset.poses))
     # print(frame_length)
@@ -17,6 +17,7 @@ def get_stamp_list(dataset, timestamp):
         raise IndexError("input timestamp bigger than total timestamp.")
     print("select index:",[i*frame_length+timestamp for i in range(len(dataset.dataset.poses))])
     return [dataset[i*frame_length+timestamp] for i in range(len(dataset.dataset.poses))]
+
 class FineSampler(Sampler):
     def __init__(self, dataset):
         self.len_dataset = len(dataset) 

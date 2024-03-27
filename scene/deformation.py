@@ -13,6 +13,7 @@ from utils.graphics_utils import apply_rotation, batch_quaternion_multiply
 from scene.hexplane import HexPlaneField
 from scene.grid import DenseGrid
 # from scene.grid import HashHexPlane
+
 class Deformation(nn.Module):
     def __init__(self, D=8, W=256, input_ch=27, input_ch_time=9, grid_pe=0, skips=[], args=None):
         super(Deformation, self).__init__()
@@ -31,17 +32,19 @@ class Deformation(nn.Module):
             self.empty_voxel = DenseGrid(channels=1, world_size=[64,64,64])
         if self.args.static_mlp:
             self.static_mlp = nn.Sequential(nn.ReLU(),nn.Linear(self.W,self.W),nn.ReLU(),nn.Linear(self.W, 1))
-        
         self.ratio=0
         self.create_net()
+
     @property
     def get_aabb(self):
         return self.grid.get_aabb
+    
     def set_aabb(self, xyz_max, xyz_min):
         print("Deformation Net Set aabb",xyz_max, xyz_min)
         self.grid.set_aabb(xyz_max, xyz_min)
         if self.args.empty_voxel:
             self.empty_voxel.set_aabb(xyz_max, xyz_min)
+
     def create_net(self):
         mlp_out_dim = 0
         if self.grid_pe !=0:
@@ -69,21 +72,19 @@ class Deformation(nn.Module):
         if self.no_grid:
             h = torch.cat([rays_pts_emb[:,:3],time_emb[:,:1]],-1)
         else:
-
             grid_feature = self.grid(rays_pts_emb[:,:3], time_emb[:,:1])
             # breakpoint()
             if self.grid_pe > 1:
                 grid_feature = poc_fre(grid_feature,self.grid_pe)
             hidden = torch.cat([grid_feature],-1) 
         
-        
         hidden = self.feature_out(hidden)   
- 
-
         return hidden
+    
     @property
     def get_empty_ratio(self):
         return self.ratio
+    
     def forward(self, rays_pts_emb, scales_emb=None, rotations_emb=None, opacity = None,shs_emb=None, time_feature=None, time_emb=None):
         if time_emb is None:
             return self.forward_static(rays_pts_emb[:,:3])
@@ -94,7 +95,8 @@ class Deformation(nn.Module):
         grid_feature = self.grid(rays_pts_emb[:,:3])
         dx = self.static_mlp(grid_feature)
         return rays_pts_emb[:, :3] + dx
-    def forward_dynamic(self,rays_pts_emb, scales_emb, rotations_emb, opacity_emb, shs_emb, time_feature, time_emb):
+    
+    def forward_dynamic(self, rays_pts_emb, scales_emb, rotations_emb, opacity_emb, shs_emb, time_feature, time_emb):
         hidden = self.query_time(rays_pts_emb, scales_emb, rotations_emb, time_feature, time_emb)
         if self.args.static_mlp:
             mask = self.static_mlp(hidden)
@@ -102,13 +104,14 @@ class Deformation(nn.Module):
             mask = self.empty_voxel(rays_pts_emb[:,:3])
         else:
             mask = torch.ones_like(opacity_emb[:,0]).unsqueeze(-1)
-        # breakpoint()
+ 
         if self.args.no_dx:
             pts = rays_pts_emb[:,:3]
         else:
             dx = self.pos_deform(hidden)
             pts = torch.zeros_like(rays_pts_emb[:,:3])
             pts = rays_pts_emb[:,:3]*mask + dx
+
         if self.args.no_ds :
             
             scales = scales_emb[:,:3]
@@ -136,28 +139,32 @@ class Deformation(nn.Module):
           
             opacity = torch.zeros_like(opacity_emb[:,:1])
             opacity = opacity_emb[:,:1]*mask + do
+
         if self.args.no_dshs:
             shs = shs_emb
         else:
             dshs = self.shs_deform(hidden).reshape([shs_emb.shape[0],16,3])
 
             shs = torch.zeros_like(shs_emb)
-            # breakpoint()
             shs = shs_emb*mask.unsqueeze(-1) + dshs
 
         return pts, scales, rotations, opacity, shs
+    
     def get_mlp_parameters(self):
         parameter_list = []
         for name, param in self.named_parameters():
             if  "grid" not in name:
                 parameter_list.append(param)
         return parameter_list
+    
     def get_grid_parameters(self):
         parameter_list = []
         for name, param in self.named_parameters():
             if  "grid" in name:
                 parameter_list.append(param)
         return parameter_list
+    
+
 class deform_network(nn.Module):
     def __init__(self, args) :
         super(deform_network, self).__init__()
@@ -184,10 +191,11 @@ class deform_network(nn.Module):
 
     def forward(self, point, scales=None, rotations=None, opacity=None, shs=None, times_sel=None):
         return self.forward_dynamic(point, scales, rotations, opacity, shs, times_sel)
+    
     @property
     def get_aabb(self):
-        
         return self.deformation_net.get_aabb
+    
     @property
     def get_empty_ratio(self):
         return self.deformation_net.get_empty_ratio
@@ -195,11 +203,12 @@ class deform_network(nn.Module):
     def forward_static(self, points):
         points = self.deformation_net(points)
         return points
+    
     def forward_dynamic(self, point, scales=None, rotations=None, opacity=None, shs=None, times_sel=None):
         # times_emb = poc_fre(times_sel, self.time_poc)
-        point_emb = poc_fre(point,self.pos_poc)
-        scales_emb = poc_fre(scales,self.rotation_scaling_poc)
-        rotations_emb = poc_fre(rotations,self.rotation_scaling_poc)
+        point_emb = poc_fre(point, self.pos_poc)
+        scales_emb = poc_fre(scales, self.rotation_scaling_poc)
+        rotations_emb = poc_fre(rotations, self.rotation_scaling_poc)
         # time_emb = poc_fre(times_sel, self.time_poc)
         # times_feature = self.timenet(time_emb)
         means3D, scales, rotations, opacity, shs = self.deformation_net( point_emb,
@@ -210,8 +219,10 @@ class deform_network(nn.Module):
                                                 None,
                                                 times_sel)
         return means3D, scales, rotations, opacity, shs
+    
     def get_mlp_parameters(self):
         return self.deformation_net.get_mlp_parameters() + list(self.timenet.parameters())
+    
     def get_grid_parameters(self):
         return self.deformation_net.get_grid_parameters()
 
@@ -222,10 +233,12 @@ def initialize_weights(m):
         if m.bias is not None:
             init.xavier_uniform_(m.weight,gain=1)
             # init.constant_(m.bias, 0)
-def poc_fre(input_data,poc_buf):
 
+def poc_fre(input_data, poc_buf):
+    """ Encode input data with positional encoding.
+    """
     input_data_emb = (input_data.unsqueeze(-1) * poc_buf).flatten(-2)
     input_data_sin = input_data_emb.sin()
     input_data_cos = input_data_emb.cos()
-    input_data_emb = torch.cat([input_data, input_data_sin,input_data_cos], -1)
+    input_data_emb = torch.cat([input_data, input_data_sin, input_data_cos], -1)
     return input_data_emb
