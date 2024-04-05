@@ -221,15 +221,15 @@ class GaussianModel:
             l.append('rot_{}'.format(i))
         return l
     
-    def compute_deformation(self,time):
+    def compute_deformation(self, time):
         deform = self._deformation[:,:,:time].sum(dim=-1)
         xyz = self._xyz + deform
         return xyz
     
-    # def save_ply_dynamic(path):
-    #     for time in range(self._deformation.shape(-1)):
-    #         xyz = self.compute_deformation(time)
+
     def load_model(self, path):
+        """ Load deformation, deformation_table, deformation_accum
+        """
         print("loading model from exists{}".format(path))
         weight_dict = torch.load(os.path.join(path,"deformation.pth"),map_location="cuda")
         self._deformation.load_state_dict(weight_dict)
@@ -241,11 +241,12 @@ class GaussianModel:
         if os.path.exists(os.path.join(path, "deformation_accum.pth")):
             self._deformation_accum = torch.load(os.path.join(path, "deformation_accum.pth"),map_location="cuda")
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
-        # print(self._deformation.deformation_net.grid.)
+        
     def save_deformation(self, path):
         torch.save(self._deformation.state_dict(),os.path.join(path, "deformation.pth"))
         torch.save(self._deformation_table,os.path.join(path, "deformation_table.pth"))
         torch.save(self._deformation_accum,os.path.join(path, "deformation_accum.pth"))
+
     def save_ply(self, path):
         mkdir_p(os.path.dirname(path))
 
@@ -261,7 +262,7 @@ class GaussianModel:
 
         elements = np.empty(xyz.shape[0], dtype=dtype_full)
         attributes = np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, rotation), axis=1)
-        elements[:] = list(map(tuple, attributes))
+        elements[:] = list(map(tuple, attributes)) 
         el = PlyElement.describe(elements, 'vertex')
         PlyData([el]).write(path)
         
@@ -271,12 +272,14 @@ class GaussianModel:
         self._opacity = optimizable_tensors["opacity"]
 
     def load_ply(self, path):
+        """ ply checkpoint includes xyz, features_dc, features_rest, opacity, scaling, rotation 
+        """
         plydata = PlyData.read(path)
 
         xyz = np.stack((np.asarray(plydata.elements[0]["x"]),
                         np.asarray(plydata.elements[0]["y"]),
-                        np.asarray(plydata.elements[0]["z"])),  axis=1)
-        opacities = np.asarray(plydata.elements[0]["opacity"])[..., np.newaxis]
+                        np.asarray(plydata.elements[0]["z"])),  axis=1)  # (N, 3)
+        opacities = np.asarray(plydata.elements[0]["opacity"])[..., np.newaxis]  # (N, 1)
 
         features_dc = np.zeros((xyz.shape[0], 3, 1))
         features_dc[:, 0, 0] = np.asarray(plydata.elements[0]["f_dc_0"])
@@ -328,6 +331,8 @@ class GaussianModel:
         return optimizable_tensors
 
     def _prune_optimizer(self, mask):
+        """Remove points from optimizer that are not in the mask
+        """
         optimizable_tensors = {}
         for group in self.optimizer.param_groups:
             if len(group["params"]) > 1:
@@ -348,6 +353,8 @@ class GaussianModel:
         return optimizable_tensors
 
     def prune_points(self, mask):
+        """Remove points from the model that are not in the mask
+        """
         valid_points_mask = ~mask
         optimizable_tensors = self._prune_optimizer(valid_points_mask)
 
@@ -364,6 +371,10 @@ class GaussianModel:
         self.max_radii2D = self.max_radii2D[valid_points_mask]
 
     def cat_tensors_to_optimizer(self, tensors_dict):
+        """Add new points to the optimizer
+        Returns:
+            optimizable_tensors: a dictionary of the optimizable tensors
+        """
         optimizable_tensors = {}
         for group in self.optimizer.param_groups:
             if len(group["params"])>1:continue
@@ -387,6 +398,9 @@ class GaussianModel:
         return optimizable_tensors
 
     def densification_postfix(self, new_xyz, new_features_dc, new_features_rest, new_opacities, new_scaling, new_rotation, new_deformation_table):
+        """Add new points to the model
+        """
+        # Attributes of the new points
         d = {"xyz": new_xyz,
         "f_dc": new_features_dc,
         "f_rest": new_features_rest,
@@ -397,6 +411,7 @@ class GaussianModel:
        }
 
         optimizable_tensors = self.cat_tensors_to_optimizer(d)
+
         self._xyz = optimizable_tensors["xyz"]
         self._features_dc = optimizable_tensors["f_dc"]
         self._features_rest = optimizable_tensors["f_rest"]
@@ -412,17 +427,21 @@ class GaussianModel:
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
 
     def densify_and_split(self, grads, grad_threshold, scene_extent, N=2):
+        """Densify the model by sampling from the gradient
+        """
+
         n_init_points = self.get_xyz.shape[0]
+
         # Extract points that satisfy the gradient condition
         padded_grad = torch.zeros((n_init_points), device="cuda")
         padded_grad[:grads.shape[0]] = grads.squeeze()
         selected_pts_mask = torch.where(padded_grad >= grad_threshold, True, False)
-
-        # breakpoint()
         selected_pts_mask = torch.logical_and(selected_pts_mask,
                                               torch.max(self.get_scaling, dim=1).values > self.percent_dense*scene_extent)
         if not selected_pts_mask.any():
             return
+        
+        # Update the model with the selected points
         stds = self.get_scaling[selected_pts_mask].repeat(N,1)
         means =torch.zeros((stds.size(0), 3),device="cuda")
         samples = torch.normal(mean=means, std=stds)
@@ -434,8 +453,10 @@ class GaussianModel:
         new_features_rest = self._features_rest[selected_pts_mask].repeat(N,1,1)
         new_opacity = self._opacity[selected_pts_mask].repeat(N,1)
         new_deformation_table = self._deformation_table[selected_pts_mask].repeat(N)
-        self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacity, new_scaling, new_rotation, new_deformation_table)
 
+        # Add the new points to the model and optimizer
+        self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacity, new_scaling, new_rotation, new_deformation_table)
+        # Prune the points that were used to generate the new points
         prune_filter = torch.cat((selected_pts_mask, torch.zeros(N * selected_pts_mask.sum(), device="cuda", dtype=bool)))
         self.prune_points(prune_filter)
 

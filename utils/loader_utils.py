@@ -19,6 +19,10 @@ def get_stamp_list(dataset, timestamp):
     return [dataset[i*frame_length+timestamp] for i in range(len(dataset.dataset.poses))]
 
 class FineSampler(Sampler):
+    """
+    Randomly selecting two elements from the sample_list and appending them to the now_list
+    """
+    
     def __init__(self, dataset):
         self.len_dataset = len(dataset) 
         self.len_pose = len(dataset.dataset.poses)
@@ -28,25 +32,22 @@ class FineSampler(Sampler):
         for i in range(self.frame_length):
             for j in range(4):
                 idx = torch.randperm(self.len_pose) *self.frame_length + i
-                # print(idx)
-                # breakpoint()
+      
                 now_list = []
                 cnt = 0
                 for item in idx.tolist():
                     now_list.append(item)
                     cnt+=1
-                    if cnt % 2 == 0 and len(sample_list)>2:    
-                        select_element = [x for x in random.sample(sample_list,2)]
+                    if cnt % 2 == 0 and len(sample_list)>2:  # Duplicate 2 elements from the sample_list    
+                        select_element = [x for x in random.sample(sample_list, 2)]
                         now_list += select_element
             
             sample_list += now_list
             
         self.sample_list = sample_list
-        # print(self.sample_list)
-        # breakpoint()
         print("one epoch containing:",len(self.sample_list))
-    def __iter__(self):
 
+    def __iter__(self):
         return iter(self.sample_list)
     
     def __len__(self):
