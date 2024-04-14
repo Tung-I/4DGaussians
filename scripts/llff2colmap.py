@@ -91,6 +91,13 @@ def center_poses(poses, blender2opencv):
 
 # Load data poses
 root_dir = sys.argv[1]
+# if sys.argv[2] does not exist
+if len(sys.argv) > 2:
+    frame_id_arg = sys.argv[2]
+    frame_id = '{0:04d}'.format(frame_id_arg)
+else:
+    frame_id = '{0:04d}'.format(0)
+
 colmap_dir = os.path.join(root_dir,"sparse_")
 if not os.path.exists(colmap_dir):
     os.makedirs(colmap_dir)
@@ -115,7 +122,8 @@ videos = sorted(videos)
 # Collect the first frame of each camera view
 image_paths = []
 for index, video_path in enumerate(videos):
-    image_path = os.path.join(video_path,"images","0000.png")
+    # image_path = os.path.join(video_path,"images","0000.png")
+    image_path = os.path.join(video_path,"images","{}.png".format(frame_id))
     image_paths.append(image_path)
 print(image_paths)
 

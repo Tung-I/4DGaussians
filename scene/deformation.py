@@ -85,7 +85,7 @@ class Deformation(nn.Module):
     def get_empty_ratio(self):
         return self.ratio
     
-    def forward(self, rays_pts_emb, scales_emb=None, rotations_emb=None, opacity = None,shs_emb=None, time_feature=None, time_emb=None):
+    def forward(self, rays_pts_emb, scales_emb=None, rotations_emb=None, opacity = None, shs_emb=None, time_feature=None, time_emb=None):
         if time_emb is None:
             return self.forward_static(rays_pts_emb[:,:3])
         else:
@@ -98,6 +98,7 @@ class Deformation(nn.Module):
     
     def forward_dynamic(self, rays_pts_emb, scales_emb, rotations_emb, opacity_emb, shs_emb, time_feature, time_emb):
         hidden = self.query_time(rays_pts_emb, scales_emb, rotations_emb, time_feature, time_emb)
+
         if self.args.static_mlp:
             mask = self.static_mlp(hidden)
         elif self.args.empty_voxel:
@@ -113,7 +114,6 @@ class Deformation(nn.Module):
             pts = rays_pts_emb[:,:3]*mask + dx
 
         if self.args.no_ds :
-            
             scales = scales_emb[:,:3]
         else:
             ds = self.scales_deform(hidden)

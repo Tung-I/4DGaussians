@@ -1,13 +1,4 @@
-#
-# Copyright (C) 2023, Inria
-# GRAPHDECO research group, https://team.inria.fr/graphdeco
-# All rights reserved.
-#
-# This software is free for non-commercial, research and evaluation use 
-# under the terms of the LICENSE.md file.
-#
-# For inquiries contact  george.drettakis@inria.fr
-#
+
 import imageio
 import numpy as np
 import torch
@@ -26,6 +17,8 @@ from time import time
 import threading
 import concurrent.futures
 import mmengine
+import yaml
+from easydict import EasyDict
 
 def multithread_write(image_list, path):
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=None)
@@ -61,17 +54,11 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
 
     for idx, view in enumerate(tqdm(views, desc="Rendering progress")):
         if idx == 0:time1 = time()
-        
+
         rendering = render(view, gaussians, pipeline, background, cam_type=cam_type)["render"]
         render_images.append(to8b(rendering).transpose(1,2,0))
         render_list.append(rendering)
 
-        if name in ["train", "test"]:
-            if cam_type != "PanopticSports":
-                gt = view.original_image[0:3, :, :]
-            else:
-                gt  = view['image'].cuda()
-            gt_list.append(gt)
 
     time2=time()
     print("FPS:",(len(views)-1)/(time2-time1))
@@ -103,26 +90,14 @@ def render_sets(dataset : ModelParams, hyperparam, iteration : int, pipeline : P
         if not skip_video:
             render_set(dataset.model_path, "video", scene.loaded_iter, scene.getVideoCameras(), gaussians,pipeline,background,cam_type)
 
-if __name__ == "__main__":
-    # Set up command line argument parser
-    parser = ArgumentParser(description="Testing script parameters")
-    model = ModelParams(parser, sentinel=True)
-    pipeline = PipelineParams(parser)
-    hyperparam = ModelHiddenParams(parser)
-    parser.add_argument("--iteration", default=-1, type=int)
-    parser.add_argument("--skip_train", action="store_true")
-    parser.add_argument("--skip_test", action="store_true")
-    parser.add_argument("--quiet", action="store_true")
-    parser.add_argument("--skip_video", action="store_true")
-    parser.add_argument("--configs", type=str)
-    args = get_combined_args(parser)
-    print("Rendering " , args.model_path)
-    if args.configs:
-        from utils.params_utils import merge_hparams
-        # config = mmcv.Config.fromfile(args.configs)
-        config = mmengine.Config.fromfile(args.configs)
-        args = merge_hparams(args, config)
-    # Initialize system state (RNG)
-    safe_state(args.quiet)
 
-    render_sets(model.extract(args), hyperparam.extract(args), args.iteration, pipeline.extract(args), args.skip_train, args.skip_test, args.skip_video)
+if __name__ == "__main__":
+
+    parser = ArgumentParser(description="Rendering script with YAML config")
+    parser.add_argument('--config', type=str, required=True, help="Path to the YAML configuration file")
+    args = parser.parse_args()
+    with open(args.config, 'r') as file:
+        config = yaml.safe_load(file)
+    args = EasyDict(config)
+    
+    render_sets(args.model_params, args.model_hidden_params, args.iteration, args.pipeline_params, args.skip_train, args.skip_test, args.skip_video)

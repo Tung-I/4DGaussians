@@ -46,6 +46,20 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
                          gaussians, scene, stage, tb_writer, train_iter,timer):
     first_iter = 0
     gaussians.training_setup(opt)
+
+    print('lp:')
+    for k,v in vars(dataset).items():
+        print(k, v)
+    print('hp:')
+    for k,v in vars(hyper).items():
+        print(k, v)
+    print('op:')
+    for k,v in vars(opt).items():
+        print(k, v)
+    print('pp:')
+    for k,v in vars(pipe).items():
+        print(k, v)
+
     if checkpoint:
         if stage == "coarse" and stage not in checkpoint:
             print("start from fine stage, skip coarse stage.")
@@ -418,9 +432,8 @@ if __name__ == "__main__":
     network_gui.init(args.ip, args.port)
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
     # Print out the arguments in args
-    print("Arguments: ")
-    for arg in vars(args):
-        print(f"{arg}: {getattr(args, arg)}")
+
+
     training(lp.extract(args), hp.extract(args), op.extract(args), pp.extract(args), 
             args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from, args.expname)
 

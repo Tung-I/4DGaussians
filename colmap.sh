@@ -1,6 +1,6 @@
 
 
-workdir=$1
+workdir=$1  # cook_spinach
 datatype=$2 # blender, hypernerf, llff
 export CUDA_VISIBLE_DEVICES=0
 

@@ -29,6 +29,10 @@ def scene_reconstruction(dataset, opt, hyper, pipe, gaussians, scene, stage, tb_
 
     # Setup the optimizer and scheduler defined in the GaussianModel Class
     gaussians.training_setup(opt)
+
+    # print('opt:')
+    # for k,v in vars(opt).items():
+    #     print(k, v)
     
     # Load checkpoint if provided
     if pipe.start_checkpoint:
@@ -43,25 +47,53 @@ def scene_reconstruction(dataset, opt, hyper, pipe, gaussians, scene, stage, tb_
     iter_start = torch.cuda.Event(enable_timing=True)
     iter_end = torch.cuda.Event(enable_timing=True)
 
+    ema_loss_for_log = 0.0
+    ema_psnr_for_log = 0.0
+
     video_cams = scene.getVideoCameras()
     test_cams = scene.getTestCameras()
     train_cams = scene.getTrainCameras()
 
-    progress_bar = tqdm(range(first_iter, train_iter + 1), desc="Training progress")
+    # Prepare the dataloader
+    viewpoint_stack = scene.getTrainCameras()
+    if opt.custom_sampler is not None:
+        sampler = FineSampler(viewpoint_stack)
+        viewpoint_stack_loader = DataLoader(viewpoint_stack, batch_size=opt.batch_size, sampler=sampler, num_workers=16, collate_fn=list)
+        random_loader = False
+    else:
+        viewpoint_stack_loader = DataLoader(viewpoint_stack, batch_size=opt.batch_size, shuffle=True, num_workers=16, collate_fn=list)
+        random_loader = True
+    loader = iter(viewpoint_stack_loader)
 
-    for iteration in progress_bar:
-        # Training iteration logic
-        viewpoint_cams = train_cams
-        images, gt_images, radii_list, visibility_filter_list, viewspace_point_tensor_list = [], [], [], [], []
+    progress_bar = tqdm(range(first_iter, train_iter), desc="Training progress")
+    first_iter += 1
+    final_iter = train_iter
 
+    for iteration in range(first_iter, final_iter+1):  
         iter_start.record()
+        gaussians.update_learning_rate(iteration)
+        # Every 1000 its we increase the levels of SH up to a maximum degree
+        if iteration % 1000 == 0:
+            gaussians.oneupSHdegree()
+
+        # Load the next batch of viewpoints
+        try:
+            viewpoint_cams = next(loader)
+        except StopIteration:
+            print("reset dataloader into random dataloader.")
+            if not random_loader:
+                viewpoint_stack_loader = DataLoader(viewpoint_stack, batch_size=opt.batch_size,shuffle=True,num_workers=32,collate_fn=list)
+                random_loader = True
+            loader = iter(viewpoint_stack_loader)
+        images, gt_images, radii_list, visibility_filter_list, viewspace_point_tensor_list = [], [], [], [], []
 
         # Batch processing of viewpoints
         for viewpoint_cam in viewpoint_cams:
             render_pkg = render(viewpoint_cam, gaussians, pipe, background, stage=stage, cam_type=scene.dataset_type)
             image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
             images.append(image.unsqueeze(0))
-            gt_images.append(viewpoint_cam.original_image.cuda().unsqueeze(0))
+            gt_image = viewpoint_cam.original_image.cuda()
+            gt_images.append(gt_image.unsqueeze(0))
             radii_list.append(radii.unsqueeze(0))
             visibility_filter_list.append(visibility_filter.unsqueeze(0))
             viewspace_point_tensor_list.append(viewspace_point_tensor)
@@ -112,7 +144,7 @@ def scene_reconstruction(dataset, opt, hyper, pipe, gaussians, scene, stage, tb_
             timer.pause()
             training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), pipe.test_iterations, scene, render, [pipe, background], stage, scene.dataset_type)
             if (iteration in pipe.save_iterations):
-                print("\n[ITER {}] Saving Gaussians".format(iteration))
+                print("\n[ITER {}] Saving Gaussians to {}".format(iteration, scene.model_path))
                 scene.save(iteration, stage)
             if dataset.render_process:
                 if (iteration < 1000 and iteration % 10 == 9) \
@@ -162,17 +194,20 @@ def scene_reconstruction(dataset, opt, hyper, pipe, gaussians, scene, stage, tb_
                 gaussians.optimizer.zero_grad(set_to_none = True)
 
             if (iteration in pipe.checkpoint_iterations):
-                print("\n[ITER {}] Saving Checkpoint".format(iteration))
+                print("\n[ITER {}] Saving Checkpoint to {}".format(iteration, scene.model_path))
                 torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" +f"_{stage}_" + str(iteration) + ".pth")
 
 
 def training(args):
 
     tb_writer = None
+    if not args.model_params.model_path:
+        args.model_params.model_path = os.path.join("./output/", args.pipeline_params.expname)
     gaussians = GaussianModel(args.model_params.sh_degree, args.model_hidden_params)
     scene = Scene(args.model_params, gaussians)
-    timer = Timer().start()
+    timer = Timer()
 
+    timer.start()
     scene_reconstruction(args.model_params, args.optimization_params, args.model_hidden_params, args.pipeline_params,
                         gaussians, scene, "coarse", tb_writer, args.optimization_params.coarse_iterations, timer)
     scene_reconstruction(args.model_params, args.optimization_params, args.model_hidden_params, args.pipeline_params,

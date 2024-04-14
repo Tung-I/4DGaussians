@@ -283,8 +283,26 @@ class Neural3D_NDC_Dataset(Dataset):
         # poses[..., 3] /= scale_factor
 
         # Sample N_views poses for validation - NeRF-like camera trajectory.
-        N_views = 300
-        self.val_poses = get_spiral(poses, self.near_fars, N_views=N_views)
+
+
+        # N_views = 300
+        # countss = 300
+
+        # # For training individual segments
+        # N_views = 60
+        # countss = 60
+
+        # For rendering individual segments
+        N_views = 300 
+        countss = 60
+        N_curr_seg = 5
+
+        self.val_poses = get_spiral(poses, self.near_fars, N_views=N_views)  # (60, 4, 4)
+
+        # For rendering individual segments
+        N_start_frame = 60 * (N_curr_seg - 1)
+        self.val_poses = self.val_poses[N_start_frame:N_start_frame + 60]
+
         # self.val_poses = self.directions
         W, H = self.img_wh
         poses_i_train = []
@@ -294,20 +312,24 @@ class Neural3D_NDC_Dataset(Dataset):
                 poses_i_train.append(i)
         self.poses = poses[poses_i_train]
         self.poses_all = poses
-        self.image_paths, self.image_poses, self.image_times, N_cam, N_time = self.load_images_path(videos, self.split)
+        self.image_paths, self.image_poses, self.image_times, N_cam, N_time = self.load_images_path(videos, self.split, countss)
         self.cam_number = N_cam
         self.time_number = N_time
+
     def get_val_pose(self):
         render_poses = self.val_poses
         render_times = torch.linspace(0.0, 1.0, render_poses.shape[0]) * 2.0 - 1.0
         return render_poses, self.time_scale * render_times
-    def load_images_path(self,videos,split):
+    
+    def load_images_path(self,videos,split, countss):
         image_paths = []
         image_poses = []
         image_times = []
         N_cams = 0
         N_time = 0
-        countss = 300
+
+        # N_segs = 1
+
         for index, video_path in enumerate(videos):
             
             if index == self.eval_index:
@@ -354,6 +376,8 @@ class Neural3D_NDC_Dataset(Dataset):
                 R[:,0] = -R[:,0]
                 T = -pose[:3,3].dot(R)
                 image_times.append(idx/countss)
+                # N_prev_frames = 60*(N_segs-1)
+                # image_times.append( (idx + N_prev_frames) / countss)
                 image_poses.append((R,T))
                 # if self.downsample != 1.0:
                 #     img = video_frame.resize(self.img_wh, Image.LANCZOS)
@@ -374,4 +398,3 @@ class Neural3D_NDC_Dataset(Dataset):
         return img, self.image_poses[index], self.image_times[index]
     def load_pose(self,index):
         return self.image_poses[index]
-
