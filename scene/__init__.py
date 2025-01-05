@@ -20,10 +20,6 @@ from arguments import ModelParams
 from utils.camera_utils import cameraList_from_camInfos, camera_to_JSON
 from torch.utils.data import Dataset
 from scene.dataset_readers import add_points
-
-# SceneInfo: point_cloud: BasicPointCloud, train_cameras: list, test_cameras: list, video_cameras: list, 
-            # nerf_normalization: dict, ply_path: str, maxtime: int
-
 class Scene:
 
     gaussians : GaussianModel
@@ -54,7 +50,7 @@ class Scene:
             scene_info = sceneLoadTypeCallbacks["Blender"](args.source_path, args.white_background, args.eval, args.extension)
             dataset_type="blender"
         elif os.path.exists(os.path.join(args.source_path, "poses_bounds.npy")):
-            scene_info = sceneLoadTypeCallbacks["dynerf"](args.source_path, args.white_background, args.eval)
+            scene_info = sceneLoadTypeCallbacks["dynerf"](args.source_path, args.white_background, args.eval, args.nframes)
             dataset_type="dynerf"
         elif os.path.exists(os.path.join(args.source_path,"dataset.json")):
             scene_info = sceneLoadTypeCallbacks["nerfies"](args.source_path, False, args.eval)
@@ -62,6 +58,9 @@ class Scene:
         elif os.path.exists(os.path.join(args.source_path,"train_meta.json")):
             scene_info = sceneLoadTypeCallbacks["PanopticSports"](args.source_path)
             dataset_type="PanopticSports"
+        elif os.path.exists(os.path.join(args.source_path,"points3D_multipleview.ply")):
+            scene_info = sceneLoadTypeCallbacks["MultipleView"](args.source_path)
+            dataset_type="MultipleView"
         else:
             assert False, "Could not recognize scene type!"
         self.maxtime = scene_info.maxtime
@@ -102,12 +101,10 @@ class Scene:
             point_cloud_path = os.path.join(self.model_path, "point_cloud/iteration_{}".format(iteration))
         self.gaussians.save_ply(os.path.join(point_cloud_path, "point_cloud.ply"))
         self.gaussians.save_deformation(point_cloud_path)
-
     def getTrainCameras(self, scale=1.0):
         return self.train_camera
 
     def getTestCameras(self, scale=1.0):
         return self.test_camera
-    
     def getVideoCameras(self, scale=1.0):
         return self.video_camera

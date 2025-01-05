@@ -115,7 +115,7 @@ def build_scaling_rotation(s, r):
     L = R @ L
     return L
 
-def safe_state(silent): 
+def safe_state(silent):
     old_f = sys.stdout
     class F:
         def __init__(self, silent):

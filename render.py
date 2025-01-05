@@ -25,8 +25,6 @@ from gaussian_renderer import GaussianModel
 from time import time
 import threading
 import concurrent.futures
-import mmengine
-
 def multithread_write(image_list, path):
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=None)
     def write_image(image, count, path):
@@ -44,9 +42,7 @@ def multithread_write(image_list, path):
         if status == False:
             write_image(image_list[index], index, path)
     
-
 to8b = lambda x : (255*np.clip(x.cpu().numpy(),0,1)).astype(np.uint8)
-
 def render_set(model_path, name, iteration, views, gaussians, pipeline, background, cam_type):
     render_path = os.path.join(model_path, name, "ours_{}".format(iteration), "renders")
     gts_path = os.path.join(model_path, name, "ours_{}".format(iteration), "gt")
@@ -56,16 +52,13 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
     render_images = []
     gt_list = []
     render_list = []
-
     print("point nums:",gaussians._xyz.shape[0])
-
     for idx, view in enumerate(tqdm(views, desc="Rendering progress")):
         if idx == 0:time1 = time()
         
-        rendering = render(view, gaussians, pipeline, background, cam_type=cam_type)["render"]
+        rendering = render(view, gaussians, pipeline, background,cam_type=cam_type)["render"]
         render_images.append(to8b(rendering).transpose(1,2,0))
         render_list.append(rendering)
-
         if name in ["train", "test"]:
             if cam_type != "PanopticSports":
                 gt = view.original_image[0:3, :, :]
@@ -77,17 +70,11 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
     print("FPS:",(len(views)-1)/(time2-time1))
 
     multithread_write(gt_list, gts_path)
+
     multithread_write(render_list, render_path)
 
     
-    # Use imageio to write render_images to a video.mp4
-    video_writer = imageio.get_writer(os.path.join(model_path, name, "ours_{}".format(iteration), 'video_rgb.mp4'), fps=30)
-    for image in render_images:
-        video_writer.append_data(image)
-    video_writer.close()
-
-    # imageio.mimwrite(os.path.join(model_path, name, "ours_{}".format(iteration), 'video_rgb.mp4'), render_images, fps=30)
-
+    imageio.mimwrite(os.path.join(model_path, name, "ours_{}".format(iteration), 'video_rgb.mp4'), render_images, fps=30)
 def render_sets(dataset : ModelParams, hyperparam, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool, skip_video: bool):
     with torch.no_grad():
         gaussians = GaussianModel(dataset.sh_degree, hyperparam)
@@ -98,11 +85,11 @@ def render_sets(dataset : ModelParams, hyperparam, iteration : int, pipeline : P
 
         if not skip_train:
             render_set(dataset.model_path, "train", scene.loaded_iter, scene.getTrainCameras(), gaussians, pipeline, background,cam_type)
+
         if not skip_test:
             render_set(dataset.model_path, "test", scene.loaded_iter, scene.getTestCameras(), gaussians, pipeline, background,cam_type)
         if not skip_video:
-            render_set(dataset.model_path, "video", scene.loaded_iter, scene.getVideoCameras(), gaussians,pipeline,background,cam_type)
-
+            render_set(dataset.model_path,"video",scene.loaded_iter,scene.getVideoCameras(),gaussians,pipeline,background,cam_type)
 if __name__ == "__main__":
     # Set up command line argument parser
     parser = ArgumentParser(description="Testing script parameters")
@@ -118,9 +105,9 @@ if __name__ == "__main__":
     args = get_combined_args(parser)
     print("Rendering " , args.model_path)
     if args.configs:
+        import mmcv
         from utils.params_utils import merge_hparams
-        # config = mmcv.Config.fromfile(args.configs)
-        config = mmengine.Config.fromfile(args.configs)
+        config = mmcv.Config.fromfile(args.configs)
         args = merge_hparams(args, config)
     # Initialize system state (RNG)
     safe_state(args.quiet)

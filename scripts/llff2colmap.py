@@ -3,8 +3,6 @@ import os
 import numpy as np
 import glob
 import sys
-import shutil
-
 def rotmat2qvec(R):
     Rxx, Ryx, Rzx, Rxy, Ryy, Rzy, Rxz, Ryz, Rzz = R.flat
     K = np.array([
@@ -17,9 +15,8 @@ def rotmat2qvec(R):
     if qvec[0] < 0:
         qvec *= -1
     return qvec
-
-
 def normalize(v):
+    """Normalize a vector."""
     return v / np.linalg.norm(v)
 
 def average_poses(poses):
@@ -59,7 +56,6 @@ def average_poses(poses):
     return pose_avg
 
 blender2opencv = np.eye(4)
-
 def center_poses(poses, blender2opencv):
     """
     Center the poses so that we can use NDC.
@@ -88,62 +84,44 @@ def center_poses(poses, blender2opencv):
     poses_centered = poses_centered[:, :3]  # (N_images, 3, 4)
 
     return poses_centered, pose_avg_homo
-
-# Load data poses
 root_dir = sys.argv[1]
-# if sys.argv[2] does not exist
-if len(sys.argv) > 2:
-    frame_id_arg = sys.argv[2]
-    frame_id = '{0:04d}'.format(frame_id_arg)
-else:
-    frame_id = '{0:04d}'.format(0)
-
 colmap_dir = os.path.join(root_dir,"sparse_")
 if not os.path.exists(colmap_dir):
     os.makedirs(colmap_dir)
 poses_arr = np.load(os.path.join(root_dir, "poses_bounds.npy"))
 poses = poses_arr[:, :-2].reshape([-1, 3, 5])  # (N_cams, 3, 5)
 near_fars = poses_arr[:, -2:]
-
-# Find the video files
 videos = glob.glob(os.path.join(root_dir, "cam[0-9][0-9]"))
 videos = sorted(videos)
-
 assert len(videos) == poses_arr.shape[0]
-
 H, W, focal = poses[0, :, -1]
 focal = focal/2
 focal = [focal, focal]
 poses = np.concatenate([poses[..., 1:2], -poses[..., :1], poses[..., 2:4]], -1)
-
 videos = glob.glob(os.path.join(root_dir, "cam[0-9][0-9]"))
 videos = sorted(videos)
-
-# Collect the first frame of each camera view
 image_paths = []
 for index, video_path in enumerate(videos):
-    # image_path = os.path.join(video_path,"images","0000.png")
-    image_path = os.path.join(video_path,"images","{}.png".format(frame_id))
+    image_path = os.path.join(video_path,"images","0000.png")
     image_paths.append(image_path)
 print(image_paths)
-
-# Save these frames
 goal_dir = os.path.join(root_dir,"image_colmap")
 if not os.path.exists(goal_dir):
     os.makedirs(goal_dir)
-
+import shutil
 image_name_list =[]
 for index, image in enumerate(image_paths):
     image_name = image.split("/")[-1].split('.')
     image_name[0] = "r_%03d" % index
+    print(image_name)
+    # breakpoint()
     image_name = ".".join(image_name)
     image_name_list.append(image_name)
     goal_path = os.path.join(goal_dir,image_name)
     shutil.copy(image,goal_path)
 
 print(poses)
-
-# Write image information of 21 camera views.
+# write image information.
 object_images_file = open(os.path.join(colmap_dir,"images.txt"),"w")
 for idx, pose in enumerate(poses):
     # pose_44 = np.eye(4)
@@ -156,16 +134,12 @@ for idx, pose in enumerate(poses):
     R = np.linalg.inv(R)
     T = -np.matmul(R,T)
     T = [str(i) for i in T]
-    # T = ["%.3f"%i for i in pose[:3,3]]
     qevc = [str(i) for i in rotmat2qvec(R)]
-    # breakpoint()
     print(idx+1," ".join(qevc)," ".join(T),1,image_name_list[idx],"\n",file=object_images_file)
 
-# Write camera infomation.
+# write camera infomation.
 object_cameras_file = open(os.path.join(colmap_dir,"cameras.txt"),"w")
-print(1,"SIMPLE_PINHOLE",1352,1014,focal[0],1352/2,1014/2,file=object_cameras_file)
-
-# Write 3D points information (empty).
+print(1,"SIMPLE_PINHOLE",1352,1014,focal[0],1352/2,1014/2,file=object_cameras_file) # 
 object_point_file = open(os.path.join(colmap_dir,"points3D.txt"),"w")
 
 object_cameras_file.close()

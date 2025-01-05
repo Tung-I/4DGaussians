@@ -21,7 +21,6 @@ from tqdm import tqdm
 from utils.image_utils import psnr
 from argparse import ArgumentParser
 from pytorch_msssim import ms_ssim
-
 def readImages(renders_dir, gt_dir):
     renders = []
     gts = []
